@@ -10,11 +10,11 @@ const app = new Hono();
 app.use("/*", serveStatic({ root: "./public" }));
 
 app.post("/api/chat", async (c) => {
-  const { message, sessionId, model } = await c.req.json();
+  const { message, sessionId, model, location } = await c.req.json();
 
   return streamSSE(c, async (stream) => {
     try {
-      for await (const chunk of chat(sessionId, message, model)) {
+      for await (const chunk of chat(sessionId, message, model, location)) {
         await stream.writeSSE({ data: chunk });
       }
       await stream.writeSSE({ data: "[DONE]" });

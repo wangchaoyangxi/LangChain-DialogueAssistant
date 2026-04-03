@@ -11,11 +11,27 @@ export interface Message {
 
 const SESSION_ID = "user_" + Date.now();
 
+function getGeolocation(): Promise<{ lat: number; lon: number } | null> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => resolve(null),
+      { timeout: 5000 }
+    );
+  });
+}
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [model, setModel] = useState(FREE_MODELS[0].id);
+  const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    getGeolocation().then(setLocation);
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -31,7 +47,7 @@ export default function App() {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, sessionId: SESSION_ID, model }),
+      body: JSON.stringify({ message: text, sessionId: SESSION_ID, model, location }),
     });
 
     const reader = res.body!.getReader();
