@@ -1,0 +1,26 @@
+{
+  "name": "my-chatbot",
+  "version": "1.0.0",
+  "scripts": {
+    "dev:server": "ts-node src/server.ts",
+    "dev:client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "cd client && npm run build && cd .. && tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
+    "@hono/node-server": "^1.12.0",
+    "@langchain/anthropic": "^0.3.0",
+    "@langchain/core": "^0.3.0",
+    "dotenv": "^16.4.0",
+    "hono": "^4.6.0",
+    "langchain": "^0.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "concurrently": "^9.2.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.0"
+  }
+}

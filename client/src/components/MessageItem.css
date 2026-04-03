@@ -1,0 +1,72 @@
+.message {
+  max-width: 75%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  line-height: 1.6;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.message.user {
+  align-self: flex-end;
+  background: #4f46e5;
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.message.bot {
+  align-self: flex-start;
+  background: white;
+  color: #333;
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Markdown 样式 */
+.message.bot p { margin-bottom: 8px; }
+.message.bot p:last-child { margin-bottom: 0; }
+.message.bot h1,
+.message.bot h2,
+.message.bot h3 { margin: 12px 0 6px; font-weight: 600; }
+.message.bot ul,
+.message.bot ol { padding-left: 20px; margin-bottom: 8px; }
+.message.bot li { margin-bottom: 4px; }
+.message.bot blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 12px;
+  color: #6b7280;
+  margin: 8px 0;
+}
+.message.bot a { color: #4f46e5; text-decoration: underline; }
+.message.bot table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+.message.bot th,
+.message.bot td { border: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; }
+.message.bot th { background: #f9fafb; font-weight: 600; }
+.message.bot code {
+  background: #f3f4f6;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+  color: #e11d48;
+}
+.message.bot pre {
+  margin: 8px 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: #4f46e5;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 0.7s steps(1) infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
