@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    name: TypeScript 类型检查
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装后端依赖
+        run: npm ci
+
+      - name: 后端类型检查
+        run: npx tsc --noEmit
+
+      - name: 安装前端依赖
+        working-directory: client
+        run: npm ci
+
+      - name: 前端类型检查
+        working-directory: client
+        run: npx tsc --noEmit
