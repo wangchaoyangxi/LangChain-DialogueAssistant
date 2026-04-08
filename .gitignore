@@ -21,3 +21,7 @@ Thumbs.db
 # IDE
 .vscode/settings.json
 .idea/
+
+# MCP 文件系统工作目录（保留目录，忽略内容）
+workspace/*
+!workspace/.gitkeep

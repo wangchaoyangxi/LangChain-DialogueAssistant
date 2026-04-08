@@ -7,6 +7,16 @@
 
 基于 **TypeScript + Hono + React** 构建的全栈 AI 聊天助手，通过 OpenRouter 接入多种大语言模型，支持流式输出、工具调用和 MCP 协议。
 
+## 演示
+
+**对话界面** — 让 AI 创建文件，多轮工具调用自动完成：
+
+![聊天界面演示](docs/images/demo-chat.png)
+
+**文件结果** — 生成的文件直接出现在 `workspace/` 目录中：
+
+![VSCode 文件树](docs/images/demo-workspace.png)
+
 ## 技术栈
 
 | 层级 | 技术 |
@@ -85,12 +95,15 @@ npm start
 
 ```
 chatbot.ts
-  ├── Skills（本地直接调用）      → get_weather
-  └── MCP Client（子进程 stdio） → mcp__reverse_geocode
-                                  mcp__get_timezone
+  ├── Skills（本地直接调用）
+  │     └── get_weather
+  └── MCP Client（多服务器 stdio）
+        ├── location   → mcp__reverse_geocode, mcp__get_timezone
+        ├── github     → mcp__search_repositories, mcp__get_issue ...
+        └── filesystem → mcp__read_file, mcp__write_file ...
 ```
 
-每次对话时，`chatbot.ts` 会自动合并 Skills 和 MCP 提供的工具，一起传给模型。MCP 工具名统一加 `mcp__` 前缀，避免与 Skills 冲突。
+每次对话时，`chatbot.ts` 自动合并所有 Skills 和所有 MCP 服务器的工具，统一传给模型。MCP 工具名加 `mcp__` 前缀，内部路由表负责把调用分发到对应服务器。
 
 ### 内置 MCP 工具
 
@@ -119,14 +132,64 @@ server.tool(
 
 ### 接入外部 MCP 服务器
 
-如需接入其他 MCP 服务器（如文件系统、数据库等），修改 [src/mcp/client.ts](src/mcp/client.ts) 中的 `StdioClientTransport` 启动命令即可：
+在 [src/mcp/client.ts](src/mcp/client.ts) 的 `MCP_SERVERS` 数组里追加配置即可，支持同时接入多个服务器，工具路由自动处理。
 
 ```typescript
-const transport = new StdioClientTransport({
-  command: "npx",
-  args: ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"],
-});
+export const MCP_SERVERS: McpServerConfig[] = [
+  // 内置 location 服务器（保留）
+  { name: "location", command: "npx", args: ["ts-node", "..."] },
+
+  // 追加外部服务器 ↓
+  {
+    name: "filesystem",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/your/dir"],
+  },
+];
 ```
+
+#### 常用外部服务器
+
+| 服务器 | 包名 | 功能 | 需要 Key |
+|--------|------|------|----------|
+| 文件系统 | `@modelcontextprotocol/server-filesystem` | 读写本地文件 | 无 |
+| GitHub | `@modelcontextprotocol/server-github` | 读 Issues / PR / 代码搜索 | `GITHUB_TOKEN` |
+| Brave 搜索 | `@modelcontextprotocol/server-brave-search` | 联网实时搜索 | `BRAVE_API_KEY` |
+| PostgreSQL | `@modelcontextprotocol/server-postgres` | 执行 SQL 查询 | 数据库连接串 |
+| Puppeteer | `@modelcontextprotocol/server-puppeteer` | 浏览器自动化 / 截图 | 无 |
+
+#### 完整示例：同时接入 GitHub + 文件系统
+
+**1. `.env` 中添加所需 Key：**
+
+```env
+GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+```
+
+**2. 在 `MCP_SERVERS` 中添加配置：**
+
+```typescript
+{
+  name: "github",
+  command: "npx",
+  args: ["-y", "@modelcontextprotocol/server-github"],
+  env: { GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN ?? "" },
+},
+{
+  name: "filesystem",
+  command: "npx",
+  args: ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"],
+},
+```
+
+**3. 启动后可直接对话：**
+
+```
+你：帮我搜索一下仓库里关于 MCP 的 Issue
+你：读取 ./workspace/notes.txt 的内容
+```
+
+模型会自动选择对应工具完成任务，无需手动指定。
 
 ## 参与贡献
 

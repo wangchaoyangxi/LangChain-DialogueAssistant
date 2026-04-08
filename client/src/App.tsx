@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import MessageItem from "./components/MessageItem";
 import InputArea from "./components/InputArea";
+import ConfirmDialog, { type ConfirmRequest } from "./components/ConfirmDialog";
 import { FREE_MODELS } from "./models";
 import "./App.css";
 
@@ -27,6 +28,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [model, setModel] = useState(FREE_MODELS[0].id);
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,8 +65,28 @@ export default function App() {
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
         if (data === "[DONE]") break;
-        raw += data;
 
+        // 清除占位内容（工具调用完毕，真实回复即将开始）
+        if (data === "[CLEAR]") {
+          raw = "";
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { role: "bot", content: "" };
+            return updated;
+          });
+          continue;
+        }
+
+        // 拦截文件操作确认请求
+        if (data.startsWith("[CONFIRM:")) {
+          try {
+            const req: ConfirmRequest = JSON.parse(data.slice(9, -1));
+            setConfirmReq(req);
+          } catch { /* 忽略解析失败 */ }
+          continue;
+        }
+
+        raw += data;
         setMessages((prev) => {
           const updated = [...prev];
           updated[updated.length - 1] = { role: "bot", content: raw };
@@ -107,6 +129,13 @@ export default function App() {
       </div>
 
       <InputArea onSend={sendMessage} loading={loading} />
+
+      {confirmReq && (
+        <ConfirmDialog
+          request={confirmReq}
+          onResult={() => setConfirmReq(null)}
+        />
+      )}
     </div>
   );
 }

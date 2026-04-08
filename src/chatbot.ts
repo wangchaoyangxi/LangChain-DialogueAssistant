@@ -1,5 +1,5 @@
 import config from "./config";
-import { TOOLS as SKILL_TOOLS, executeSkill, type SkillContext } from "./skills";
+import { TOOLS as SKILL_TOOLS, executeSkill, SKILL_CONFIRM_SET, type SkillContext } from "./skills";
 import { getMcpTools, callMcpTool } from "./mcp/client";
 import { reverseGeocode } from "./mcp/geocode";
 
@@ -69,7 +69,13 @@ async function* readStream(response: Response): AsyncGenerator<{ text?: string; 
     for (const line of lines) {
       if (!line.startsWith("data:")) continue;
       const data = line.slice(5).trim();
-      if (data === "[DONE]") return;
+      if (data === "[DONE]") {
+          // 部分 API 在 [DONE] 前不单独发 finish_reason: "tool_calls"
+          // 此处兜底：如果还有未 yield 的 toolCalls，先 yield 再退出
+          const pending = Object.values(pendingToolCalls);
+          if (pending.length > 0) yield { toolCalls: pending };
+          return;
+        }
 
       try {
         const event = JSON.parse(data);
@@ -106,19 +112,75 @@ async function* readStream(response: Response): AsyncGenerator<{ text?: string; 
   }
 }
 
+// ==================== 文件操作确认机制 ====================
+
+// 需要用户确认的 MCP 文件系统工具
+const FS_WRITE_TOOLS = new Set([
+  "write_file", "edit_file", "create_directory", "move_file",
+]);
+
+// 挂起的确认请求 Map：id → { resolve }
+export const pendingConfirms = new Map<string, (approved: boolean) => void>();
+
+export interface ConfirmRequest {
+  id: string;
+  tool: string;        // 工具名（不含 mcp__ 前缀）
+  path?: string;       // 涉及的路径（方便用户判断）
+}
+
 // ==================== 执行 tool calls ====================
 
-async function runToolCalls(toolCalls: ToolCall[], ctx: SkillContext): Promise<Message[]> {
-  return Promise.all(
-    toolCalls.map(async (call) => {
-      const args = JSON.parse(call.function.arguments);
-      // mcp__ 前缀的交给 MCP 执行，其余交给 Skills
-      const result = call.function.name.startsWith("mcp__")
-        ? await callMcpTool(call.function.name, args)
-        : await executeSkill(call.function.name, args, ctx);
-      return { role: "tool" as Role, tool_call_id: call.id, content: result };
-    })
-  );
+async function* runToolCalls(
+  toolCalls: ToolCall[],
+  ctx: SkillContext
+): AsyncGenerator<string, Message[]> {
+  const results: Message[] = [];
+
+  for (const call of toolCalls) {
+    let result: string;
+    try {
+      const args = JSON.parse(call.function.arguments || "{}");
+      const isMcpWriteTool = call.function.name.startsWith("mcp__") &&
+        FS_WRITE_TOOLS.has(call.function.name.replace(/^mcp__/, ""));
+      const isSkillConfirm = !call.function.name.startsWith("mcp__") &&
+        SKILL_CONFIRM_SET.has(call.function.name);
+      const isFsTool = isMcpWriteTool || isSkillConfirm;
+
+      if (isFsTool) {
+        // 生成确认请求，发给前端
+        const id = Math.random().toString(36).slice(2);
+        const toolName = call.function.name.replace(/^mcp__/, "");
+        const req: ConfirmRequest = { id, tool: toolName, path: args.path ?? args.source ?? "" };
+        yield `[CONFIRM:${JSON.stringify(req)}]`;
+
+        // 挂起，等待用户操作（最多 10 分钟）
+        let timedOut = false;
+        const approved = await Promise.race([
+          new Promise<boolean>((resolve) => pendingConfirms.set(id, resolve)),
+          new Promise<boolean>((resolve) => setTimeout(() => { timedOut = true; resolve(false); }, 600_000)),
+        ]);
+        pendingConfirms.delete(id);
+
+        if (!approved) {
+          result = timedOut ? "确认超时（10 分钟），操作已自动取消。" : "用户已拒绝该操作。";
+        } else {
+          result = call.function.name.startsWith("mcp__")
+            ? await callMcpTool(call.function.name, args)
+            : await executeSkill(call.function.name, args, ctx);
+        }
+      } else {
+        result = call.function.name.startsWith("mcp__")
+          ? await callMcpTool(call.function.name, args)
+          : await executeSkill(call.function.name, args, ctx);
+      }
+    } catch (e) {
+      result = `工具调用失败: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    results.push({ role: "tool" as Role, tool_call_id: call.id, content: result });
+  }
+
+  return results;
 }
 
 // ==================== 主入口 ====================
@@ -159,18 +221,28 @@ export async function* chat(
     if (chunk.toolCalls) toolCalls = chunk.toolCalls;
   }
 
-  if (toolCalls && toolCalls.length > 0) {
+  // 循环处理多轮工具调用，直到模型不再请求工具为止
+  while (toolCalls && toolCalls.length > 0) {
     messages.push({ role: "assistant", content: "", tool_calls: toolCalls });
-    yield "\n\n⏳ 正在查询...";
+    yield "[CLEAR]";
 
-    const toolResults = await runToolCalls(toolCalls, ctx);
+    const toolResults: Message[] = [];
+    const gen = runToolCalls(toolCalls, ctx);
+    let step = await gen.next();
+    while (!step.done) {
+      yield step.value;          // 转发 [CONFIRM:...] 或其他中间事件
+      step = await gen.next();
+    }
+    toolResults.push(...step.value);  // generator return 值即 Message[]
     messages.push(...toolResults);
 
     yield "\n\n";
     assistantText = "";
+    toolCalls = undefined;
 
     for await (const chunk of readStream(await fetchStream(messages, usedModel))) {
       if (chunk.text) { assistantText += chunk.text; yield chunk.text; }
+      if (chunk.toolCalls) toolCalls = chunk.toolCalls;
     }
   }
 
